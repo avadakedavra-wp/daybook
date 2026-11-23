@@ -256,8 +256,10 @@ class _HomeState extends State<Home> {
                     const SizedBox(height: 24),
                     Row(
                       children: [
-                        Text('กิจกรรมของฉัน', style: heading(21)),
-                        const Spacer(),
+                        Expanded(
+                          child: Text('กิจกรรมของฉัน', style: heading(21)),
+                        ),
+                        const SizedBox(width: 8),
                         Text('${activities.length} รายการ', style: small),
                       ],
                     ),
@@ -443,7 +445,9 @@ class Details extends StatelessWidget {
                       icon: const Icon(Icons.arrow_back_rounded),
                     ),
                     const SizedBox(width: 4),
-                    Text('รายละเอียดกิจกรรม', style: heading(18)),
+                    Expanded(
+                      child: Text('รายละเอียดกิจกรรม', style: heading(18)),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
