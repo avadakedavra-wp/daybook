@@ -1,20 +1,81 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'journal_art.dart';
+import 'progress_store.dart';
+import 'supabase_progress_store.dart';
+
+export 'progress_store.dart' show progressKey;
 
 part 'calendar.dart';
+part 'cloud.dart';
 
 const paper = Color(0xfffaf9f3);
 const ink = Color(0xff203c33);
 const muted = Color(0xff53685d);
 const rule = Color(0xffd6dcd0);
 const butter = Color(0xfff8e7a4);
-String progressKey(DateTime date) =>
-    'daybook.done.${date.year}.${date.month}.${date.day}';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+  const url = String.fromEnvironment('SUPABASE_URL');
+  const publishableKey = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+  if (url.isNotEmpty || publishableKey.isNotEmpty) {
+    final endpoint = Uri.tryParse(url);
+    final callback = _callback;
+    final validCallback =
+        callback != null &&
+        ((!kReleaseMode && callback.toString() == _developmentCallback) ||
+            (callback.scheme == 'https' &&
+                callback.host.isNotEmpty &&
+                callback.path == '/callback' &&
+                !callback.hasQuery &&
+                !callback.hasFragment &&
+                callback.userInfo.isEmpty));
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        endpoint != null &&
+        endpoint.scheme == 'https' &&
+        endpoint.host.isNotEmpty &&
+        endpoint.userInfo.isEmpty &&
+        !endpoint.hasQuery &&
+        !endpoint.hasFragment &&
+        validCallback &&
+        publishableKey.startsWith('sb_publishable_')) {
+      try {
+        final project = endpoint.host;
+        final supabase = await Supabase.initialize(
+          url: url,
+          publishableKey: publishableKey,
+          authOptions: FlutterAuthClientOptions(
+            authFlowType: AuthFlowType.pkce,
+            localStorage: _SecureSession(project),
+            pkceAsyncStorage: _SecurePkce(project),
+            detectSessionInUriPredicate: (uri) =>
+                uri.scheme == callback.scheme &&
+                uri.host == callback.host &&
+                uri.path == callback.path,
+          ),
+        );
+        runApp(
+          _CloudDaybook(
+            prefs: prefs,
+            client: supabase.client,
+            project: project,
+          ),
+        );
+        return;
+      } catch (_) {
+        runApp(Daybook(prefs: prefs, screen: const _CloudSetupError()));
+        return;
+      }
+    }
+    runApp(Daybook(prefs: prefs, screen: const _CloudSetupError()));
+    return;
+  }
   runApp(Daybook(prefs: prefs));
 }
 
@@ -82,8 +143,9 @@ const activities = [
 ];
 
 class Daybook extends StatelessWidget {
-  const Daybook({super.key, required this.prefs});
+  const Daybook({super.key, required this.prefs, this.screen});
   final SharedPreferences prefs;
+  final Widget? screen;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'My Mini To-Do',
@@ -104,7 +166,7 @@ class Daybook extends StatelessWidget {
         fontFamilyFallback: const ['JournalLatin'],
       ),
     ),
-    home: Home(prefs: prefs),
+    home: screen ?? Home(progress: LocalProgressStore(prefs)),
   );
 }
 
@@ -148,8 +210,13 @@ String todayLabel(DateTime date) {
 }
 
 class Home extends StatefulWidget {
-  const Home({super.key, required this.prefs});
-  final SharedPreferences prefs;
+  const Home({
+    super.key,
+    required this.progress,
+    this.accountActions = const [],
+  });
+  final ProgressStore progress;
+  final List<Widget> accountActions;
   @override
   State<Home> createState() => _HomeState();
 }
@@ -157,9 +224,9 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   DateTime selected = DateUtils.dateOnly(DateTime.now());
   Set<String> completedOn(DateTime day) =>
-      {...?widget.prefs.getStringList(progressKey(day))}
-        ..retainAll(activities.map((a) => a.id));
+      widget.progress.completedOn(day)..retainAll(activities.map((a) => a.id));
   late Set<String> done = completedOn(selected);
+  bool saving = false;
 
   Future<void> openCalendar() async {
     final day = await Navigator.push<DateTime>(
@@ -178,20 +245,23 @@ class _HomeState extends State<Home> {
   }
 
   Future<void> change(String id, bool checked) async {
+    if (saving) return;
+    final day = selected;
+    setState(() => saving = true);
+    var saved = false;
+    try {
+      saved = await widget.progress.save(day, id, checked);
+    } catch (_) {
+      // Keep the last confirmed state when persistence fails.
+    }
+    if (!mounted) return;
     setState(() {
-      if (checked) {
-        done.add(id);
-      } else {
-        done.remove(id);
-      }
+      saving = false;
+      done = completedOn(selected);
     });
-    if (!await widget.prefs.setStringList(
-          progressKey(selected),
-          done.toList(),
-        ) &&
-        mounted) {
+    if (!saved) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกในเครื่องไม่ได้ กรุณาลองอีกครั้ง')),
+        const SnackBar(content: Text('บันทึกไม่ได้ กรุณาลองอีกครั้ง')),
       );
     }
   }
@@ -248,6 +318,8 @@ class _HomeState extends State<Home> {
                     const SizedBox(height: 14),
                     const Divider(height: 1, color: rule),
                     const SizedBox(height: 26),
+                    if (widget.accountActions.isNotEmpty)
+                      Wrap(spacing: 8, children: widget.accountActions),
                     Text('สมุดกิจกรรมของฉัน', style: heading(31)),
                     const SizedBox(height: 3),
                     Text(todayLabel(selected), style: small),
@@ -287,7 +359,7 @@ class _HomeState extends State<Home> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(5),
                       ),
-                      onChanged: (v) => change(a.id, v!),
+                      onChanged: saving ? null : (v) => change(a.id, v!),
                     ),
                     horizontalTitleGap: 3,
                     minLeadingWidth: 40,

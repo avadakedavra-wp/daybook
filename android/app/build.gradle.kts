@@ -28,6 +28,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        val authHost = providers.gradleProperty("daybookAuthHost").orNull
+        manifestPlaceholders["daybookAuthScheme"] =
+            if (authHost == null) applicationId!! else "https"
+        manifestPlaceholders["daybookAuthHost"] = authHost ?: "auth"
     }
 
     buildTypes {
