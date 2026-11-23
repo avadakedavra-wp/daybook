@@ -20,7 +20,9 @@ class JournalCalendar extends StatefulWidget {
     super.key,
     required this.initial,
     required this.completedOn,
+    this.activityCount,
   });
+  final int? activityCount;
   final DateTime initial;
   final Set<String> Function(DateTime) completedOn;
   @override
@@ -28,6 +30,7 @@ class JournalCalendar extends StatefulWidget {
 }
 
 class _JournalCalendarState extends State<JournalCalendar> {
+  int get activityCount => widget.activityCount ?? activities.length;
   late DateTime day = widget.initial;
   late DateTime month = DateTime(day.year, day.month);
 
@@ -222,7 +225,7 @@ class _JournalCalendarState extends State<JournalCalendar> {
                       Text(todayLabel(day), style: heading(20)),
                       const SizedBox(height: 6),
                       Text(
-                        'ทำแล้ว ${done.length} จาก ${activities.length} กิจกรรม',
+                        'ทำแล้ว ${done.length} จาก $activityCount กิจกรรม',
                         style: const TextStyle(color: muted, fontSize: 15),
                       ),
                     ],
@@ -254,14 +257,13 @@ class _JournalCalendarState extends State<JournalCalendar> {
     final selected = DateUtils.isSameDay(date, day);
     final isToday = DateUtils.isSameDay(date, today);
     final count = widget.completedOn(date).length;
-    final dot = count == activities.length
+    final dot = count == activityCount
         ? const Color(0xff36835f)
         : const Color(0xffcf944a);
     return Semantics(
       button: true,
       selected: selected,
-      label:
-          '${todayLabel(date)} ทำแล้ว $count จาก ${activities.length} กิจกรรม',
+      label: '${todayLabel(date)} ทำแล้ว $count จาก $activityCount กิจกรรม',
       child: InkWell(
         key: ValueKey(progressKey(date)),
         borderRadius: BorderRadius.circular(13),
@@ -298,7 +300,7 @@ class _JournalCalendarState extends State<JournalCalendar> {
                   color: count == 0
                       ? Colors.transparent
                       : selected
-                      ? (count == activities.length
+                      ? (count == activityCount
                             ? const Color(0xffa7e3b5)
                             : butter)
                       : dot,

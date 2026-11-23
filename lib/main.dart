@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,6 +14,7 @@ export 'progress_store.dart' show progressKey;
 
 part 'calendar.dart';
 part 'cloud.dart';
+part 'custom_activities.dart';
 
 const paper = Color(0xfffaf9f3);
 const ink = Color(0xff203c33);
@@ -166,7 +170,12 @@ class Daybook extends StatelessWidget {
         fontFamilyFallback: const ['JournalLatin'],
       ),
     ),
-    home: screen ?? Home(progress: LocalProgressStore(prefs)),
+    home:
+        screen ??
+        Home(
+          progress: LocalProgressStore(prefs),
+          customActivities: CustomActivityStore(prefs),
+        ),
   );
 }
 
@@ -213,18 +222,25 @@ class Home extends StatefulWidget {
   const Home({
     super.key,
     required this.progress,
+    required this.customActivities,
     this.accountActions = const [],
   });
   final ProgressStore progress;
+  final CustomActivityStore customActivities;
   final List<Widget> accountActions;
   @override
   State<Home> createState() => _HomeState();
 }
 
 class _HomeState extends State<Home> {
+  List<Activity> get allActivities => [
+    ...activities,
+    ...widget.customActivities.items,
+  ];
   DateTime selected = DateUtils.dateOnly(DateTime.now());
   Set<String> completedOn(DateTime day) =>
-      widget.progress.completedOn(day)..retainAll(activities.map((a) => a.id));
+      widget.progress.completedOn(day)
+        ..retainAll(allActivities.map((a) => a.id));
   late Set<String> done = completedOn(selected);
   bool saving = false;
 
@@ -232,8 +248,11 @@ class _HomeState extends State<Home> {
     final day = await Navigator.push<DateTime>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            JournalCalendar(initial: selected, completedOn: completedOn),
+        builder: (_) => JournalCalendar(
+          initial: selected,
+          completedOn: completedOn,
+          activityCount: allActivities.length,
+        ),
       ),
     );
     if (day != null && mounted) {
@@ -266,11 +285,91 @@ class _HomeState extends State<Home> {
     }
   }
 
+  Future<bool> editActivity([Activity? original]) async {
+    if (saving) return false;
+    final item = await showDialog<Activity>(
+      context: context,
+      builder: (_) => _ActivityEditor(original),
+    );
+    if (item == null || !mounted) return false;
+    return updateActivities(
+      () => widget.customActivities.save(item, creating: original == null),
+    );
+  }
+
+  Future<bool> deleteActivity(Activity item) async {
+    if (saving) return false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ลบกิจกรรม'),
+        content: Text('ลบ “${item.title}” ออกจากรายการของทุกวันหรือไม่?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('ลบกิจกรรม'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return false;
+    return updateActivities(() => widget.customActivities.remove(item.id));
+  }
+
+  Future<bool> updateActivities(Future<void> Function() update) async {
+    setState(() => saving = true);
+    try {
+      await update();
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('บันทึกการเปลี่ยนแปลงไม่ได้ กรุณาลองอีกครั้ง'),
+          ),
+        );
+      }
+      return false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          saving = false;
+          done = completedOn(selected);
+        });
+      }
+    }
+  }
+
   Future<void> open(Activity a) async {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => Details(activity: a, complete: done.contains(a.id)),
+        builder: (routeContext) => Details(
+          activity: a,
+          complete: done.contains(a.id),
+          onEdit: a.id.startsWith('custom-')
+              ? () async {
+                  if (await editActivity(a) &&
+                      routeContext.mounted &&
+                      ModalRoute.of(routeContext)?.isCurrent == true) {
+                    Navigator.pop(routeContext);
+                  }
+                }
+              : null,
+          onDelete: a.id.startsWith('custom-')
+              ? () async {
+                  if (await deleteActivity(a) &&
+                      routeContext.mounted &&
+                      ModalRoute.of(routeContext)?.isCurrent == true) {
+                    Navigator.pop(routeContext);
+                  }
+                }
+              : null,
+        ),
       ),
     );
     if (result != null && mounted) await change(a.id, result);
@@ -284,7 +383,7 @@ class _HomeState extends State<Home> {
           constraints: const BoxConstraints(maxWidth: 570),
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(20, 22, 20, 26),
-            itemCount: activities.length + 1,
+            itemCount: allActivities.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Column(
@@ -324,7 +423,7 @@ class _HomeState extends State<Home> {
                     const SizedBox(height: 3),
                     Text(todayLabel(selected), style: small),
                     const SizedBox(height: 15),
-                    Cover(count: done.length),
+                    Cover(count: done.length, total: allActivities.length),
                     const SizedBox(height: 24),
                     Row(
                       children: [
@@ -332,14 +431,19 @@ class _HomeState extends State<Home> {
                           child: Text('กิจกรรมของฉัน', style: heading(21)),
                         ),
                         const SizedBox(width: 8),
-                        Text('${activities.length} รายการ', style: small),
+                        Text('${allActivities.length} รายการ', style: small),
+                        IconButton(
+                          tooltip: 'เพิ่มกิจกรรม',
+                          onPressed: saving ? null : () => editActivity(),
+                          icon: const Icon(Icons.add_circle_outline),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 12),
                   ],
                 );
               }
-              final a = activities[index - 1];
+              final a = allActivities[index - 1];
               final checked = done.contains(a.id);
               return Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -421,7 +525,8 @@ class Tag extends StatelessWidget {
 }
 
 class Cover extends StatelessWidget {
-  const Cover({super.key, required this.count});
+  const Cover({super.key, required this.count, required this.total});
+  final int total;
   final int count;
   @override
   Widget build(BuildContext context) => Container(
@@ -451,7 +556,7 @@ class Cover extends StatelessWidget {
                 children: [
                   Text('ความคืบหน้า', style: heading(16)),
                   const SizedBox(height: 5),
-                  Text('$count / ${activities.length}', style: heading(39)),
+                  Text('$count / $total', style: heading(39)),
                 ],
               ),
             ),
@@ -464,23 +569,25 @@ class Cover extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  count == activities.length
+                  count == total
                       ? 'ทำครบทุกกิจกรรมแล้ว'
-                      : 'เหลืออีก ${activities.length - count} กิจกรรม',
+                      : 'เหลืออีก ${total - count} กิจกรรม',
                   style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ),
               const SizedBox(width: 10),
               Row(
                 children: List.generate(
-                  activities.length,
+                  total.clamp(0, 6),
                   (i) => AnimatedContainer(
                     duration: const Duration(milliseconds: 230),
                     width: 20,
                     height: 6,
                     margin: const EdgeInsets.only(left: 3),
                     decoration: BoxDecoration(
-                      color: i < count ? butter : const Color(0xff61786c),
+                      color: i < (count * total.clamp(0, 6) / total).round()
+                          ? butter
+                          : const Color(0xff61786c),
                       borderRadius: BorderRadius.circular(3),
                     ),
                   ),
@@ -495,7 +602,14 @@ class Cover extends StatelessWidget {
 }
 
 class Details extends StatelessWidget {
-  const Details({super.key, required this.activity, required this.complete});
+  const Details({
+    super.key,
+    required this.activity,
+    required this.complete,
+    this.onEdit,
+    this.onDelete,
+  });
+  final VoidCallback? onEdit, onDelete;
   final Activity activity;
   final bool complete;
   @override
@@ -522,6 +636,24 @@ class Details extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (onEdit != null || onDelete != null)
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (onEdit != null)
+                        TextButton.icon(
+                          onPressed: onEdit,
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('แก้ไขกิจกรรม'),
+                        ),
+                      if (onDelete != null)
+                        TextButton.icon(
+                          onPressed: onDelete,
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('ลบกิจกรรม'),
+                        ),
+                    ],
+                  ),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.all(20),

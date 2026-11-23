@@ -160,7 +160,17 @@ class _CloudHomeState extends State<_CloudHome> {
     widget.userId,
     widget.project,
   );
-  late Future<void> loading = progress.refresh();
+  late final customActivities = CustomActivityStore.cloud(
+    widget.prefs,
+    widget.client,
+    widget.project,
+    widget.userId,
+  );
+  Future<void> refresh() async {
+    await Future.wait([progress.refresh(), customActivities.refresh()]);
+  }
+
+  late Future<void> loading = refresh();
   bool signingOut = false;
 
   Future<void> signOut() async {
@@ -185,10 +195,11 @@ class _CloudHomeState extends State<_CloudHome> {
       }
       return Home(
         progress: progress,
+        customActivities: customActivities,
         accountActions: [
           if (snapshot.hasError) const Text('กำลังแสดงข้อมูลจากแคช'),
           TextButton(
-            onPressed: () => setState(() => loading = progress.refresh()),
+            onPressed: () => setState(() => loading = refresh()),
             child: const Text('โหลดข้อมูลล่าสุด'),
           ),
           TextButton(
