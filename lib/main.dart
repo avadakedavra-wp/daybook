@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -15,6 +16,7 @@ export 'progress_store.dart' show progressKey;
 part 'calendar.dart';
 part 'cloud.dart';
 part 'custom_activities.dart';
+part 'welcome.dart';
 
 const paper = Color(0xfffaf9f3);
 const ink = Color(0xff203c33);
@@ -80,7 +82,7 @@ Future<void> main() async {
     runApp(Daybook(prefs: prefs, screen: const _CloudSetupError()));
     return;
   }
-  runApp(Daybook(prefs: prefs));
+  runApp(Daybook(prefs: prefs, showWelcome: true));
 }
 
 class Activity {
@@ -147,36 +149,45 @@ const activities = [
 ];
 
 class Daybook extends StatelessWidget {
-  const Daybook({super.key, required this.prefs, this.screen});
+  const Daybook({
+    super.key,
+    required this.prefs,
+    this.screen,
+    this.showWelcome = false,
+  });
+  final bool showWelcome;
   final SharedPreferences prefs;
   final Widget? screen;
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'My Mini To-Do',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: ink,
-        primary: ink,
-        surface: paper,
-      ),
-      scaffoldBackgroundColor: paper,
-      fontFamily: 'JournalThai',
-      fontFamilyFallback: const ['JournalLatin'],
-      textTheme: ThemeData.light().textTheme.apply(
-        bodyColor: ink,
-        displayColor: ink,
-        fontFamily: 'JournalThai',
-        fontFamilyFallback: const ['JournalLatin'],
-      ),
-    ),
-    home:
+  Widget build(BuildContext context) {
+    final landing =
         screen ??
         Home(
           progress: LocalProgressStore(prefs),
           customActivities: CustomActivityStore(prefs),
+        );
+    return MaterialApp(
+      title: 'My Mini To-Do',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: ink,
+          primary: ink,
+          surface: paper,
         ),
-  );
+        scaffoldBackgroundColor: paper,
+        fontFamily: 'JournalThai',
+        fontFamilyFallback: const ['JournalLatin'],
+        textTheme: ThemeData.light().textTheme.apply(
+          bodyColor: ink,
+          displayColor: ink,
+          fontFamily: 'JournalThai',
+          fontFamilyFallback: const ['JournalLatin'],
+        ),
+      ),
+      home: showWelcome ? _Welcome(prefs: prefs, child: landing) : landing,
+    );
+  }
 }
 
 TextStyle heading(double size) => TextStyle(

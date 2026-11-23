@@ -67,6 +67,7 @@ class _CloudDaybook extends StatelessWidget {
       final user = client.auth.currentUser;
       return Daybook(
         key: ValueKey(user?.id),
+        showWelcome: true,
         prefs: prefs,
         screen: user == null
             ? _SignIn(client: client, callbackFailed: snapshot.hasError)
