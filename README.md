@@ -40,7 +40,7 @@ python3 -m http.server 8080 --bind 0.0.0.0 --directory build/web
 1. ใช้ migration ใน `supabase/migrations/` กับฐานข้อมูล Supabase โปรเจกต์ของคุณ
    ตารางเปิด RLS เพื่อจำกัดการอ่านและเขียนตามผู้ใช้ที่ล็อกอิน
 2. เปิด Google provider ใน Supabase Auth ตั้งค่า Google OAuth ตามคู่มือ Supabase
-   และเพิ่ม `com.example.my_mini_todo://auth/callback` ใน Redirect URLs สำหรับ Emulator
+   และเพิ่ม `com.daybook.minitodo://auth/callback` ใน Redirect URLs สำหรับ Emulator
 3. รันแอปพร้อม URL และ **publishable key** จาก Supabase ใช้ OAuth client secret
    เฉพาะใน Supabase Dashboard และเก็บ service role key ไว้ฝั่งเซิร์ฟเวอร์
 

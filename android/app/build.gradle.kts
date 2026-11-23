@@ -30,7 +30,7 @@ android {
         versionName = flutter.versionName
         val authHost = providers.gradleProperty("daybookAuthHost").orNull
         manifestPlaceholders["daybookAuthScheme"] =
-            if (authHost == null) applicationId!! else "https"
+            if (authHost == null) "com.daybook.minitodo" else "https"
         manifestPlaceholders["daybookAuthHost"] = authHost ?: "auth"
     }
 

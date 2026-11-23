@@ -1,6 +1,6 @@
 part of 'main.dart';
 
-const _developmentCallback = 'com.example.my_mini_todo://auth/callback';
+const _developmentCallback = 'com.daybook.minitodo://auth/callback';
 final _callback = Uri.tryParse(
   const String.fromEnvironment(
     'DAYBOOK_AUTH_REDIRECT',
